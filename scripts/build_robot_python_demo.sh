@@ -14,7 +14,7 @@ cd $PIXY_ROOT/src/host/robot_in_python
 set -e
 
 echo "-----------------------------------------"
-echo " Building libpixyusb SWIG module"
+echo " Building Pixy Robot module"
 echo "-----------------------------------------"
 
 # Pass OS identity to C preprocessor #
@@ -27,7 +27,7 @@ then
   OS="__LINUX__"
 fi
 
-cp get_blocks.py $PIXY_ROOT/build/$TARGET_BUILD_FOLDER
+cp robot.py $PIXY_ROOT/build/$TARGET_BUILD_FOLDER
 cp pixy.i $PIXY_ROOT/build/$TARGET_BUILD_FOLDER
 cp setup.py $PIXY_ROOT/build/$TARGET_BUILD_FOLDER
 
