@@ -27,7 +27,9 @@ then
   OS="__LINUX__"
 fi
 
-cp robot.py $PIXY_ROOT/build/$TARGET_BUILD_FOLDER
+cp demo.py $PIXY_ROOT/build/$TARGET_BUILD_FOLDER
+cp get_blocks.py $PIXY_ROOT/build/$TARGET_BUILD_FOLDER
+cp pan_tilt.py $PIXY_ROOT/build/$TARGET_BUILD_FOLDER
 cp pixy.i $PIXY_ROOT/build/$TARGET_BUILD_FOLDER
 cp setup.py $PIXY_ROOT/build/$TARGET_BUILD_FOLDER
 
@@ -50,10 +52,12 @@ echo "-----------------------------------------"
 echo " Build complete"
 echo "-----------------------------------------"
 echo ""
-echo "To run the robot  example execute the following commands:"
+echo "To run the examples execute the following commands:"
 echo ""
 echo " > cd ../build/robot_in_python"
-echo " > python robot.py"
+echo " > python demo.py"
+echo " > python get_blocks.py"
+echo " > python pan_tilt.py"
 echo ""
 
 cd $PIXY_ROOT/scripts
