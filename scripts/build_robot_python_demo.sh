@@ -7,6 +7,18 @@ TARGET_BUILD_FOLDER=robot_in_python
 
 mkdir $PIXY_ROOT/build/
 mkdir $PIXY_ROOT/build/$TARGET_BUILD_FOLDER
+echo "-----------------------------------------"
+echo "Installing motor libraries"
+echo "-----------------------------------------"
+sudo pip install rrb3
+cd /tmp
+git clone https://github.com/simonmonk/raspirobotboard3.git
+cd raspirobotboard3/python
+sudo python setup.py install
+echo "-----------------------------------------"
+echo "Finished installing motor libraries"
+echo "-----------------------------------------"
+
 
 cd $PIXY_ROOT/src/host/robot_in_python
 
