@@ -7,14 +7,11 @@ TARGET_BUILD_FOLDER=robot_in_python
 
 mkdir $PIXY_ROOT/build/
 mkdir $PIXY_ROOT/build/$TARGET_BUILD_FOLDER
+
 echo "-----------------------------------------"
 echo "Installing motor libraries"
 echo "-----------------------------------------"
 sudo pip install rrb3
-cd /tmp
-git clone https://github.com/simonmonk/raspirobotboard3.git
-cd raspirobotboard3/python
-sudo python setup.py install
 echo "-----------------------------------------"
 echo "Finished installing motor libraries"
 echo "-----------------------------------------"
@@ -42,6 +39,7 @@ fi
 cp demo.py $PIXY_ROOT/build/$TARGET_BUILD_FOLDER
 cp get_blocks.py $PIXY_ROOT/build/$TARGET_BUILD_FOLDER
 cp pan_tilt.py $PIXY_ROOT/build/$TARGET_BUILD_FOLDER
+cp pixy_racer.py $PIXY_ROOT/build/$TARGET_BUILD_FOLDER
 cp pixy.i $PIXY_ROOT/build/$TARGET_BUILD_FOLDER
 cp setup.py $PIXY_ROOT/build/$TARGET_BUILD_FOLDER
 
@@ -70,6 +68,7 @@ echo " > cd ../build/robot_in_python"
 echo " > python demo.py"
 echo " > python get_blocks.py"
 echo " > python pan_tilt.py"
+echo " > python pixy_racer.py"
 echo ""
 
 cd $PIXY_ROOT/scripts
