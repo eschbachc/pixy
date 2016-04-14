@@ -66,6 +66,7 @@ h_dgain = 0
 # distance tracking target size: 16cm for orange cone width
 targetSize = 20
 targetSize2 = 10
+rr = rrb3.RRB3(9,6)
 
 blocks = None
 
@@ -75,7 +76,7 @@ def handle_SIGINT(signal, frame):
 	run_flag = False
 
 
-class Blocks (Structure):
+class Blocks (ctypes.Structure):
 	_fields_ = [
 		("type", ctypes.c_uint),
 		("signature", ctypes.c_uint),
@@ -87,9 +88,10 @@ class Blocks (Structure):
 	]
 
 
-class ServoLoop (Object):
 
-	def __init__(pgain, dgain):
+class ServoLoop (object):
+
+	def __init__(self, pgain, dgain):
 		self.m_pos = PIXY_RCS_CENTER_POS
 		self.m_prevError = 0x80000000L
 		self.m_pgain = pgain
@@ -106,15 +108,15 @@ class ServoLoop (Object):
 		m_prevError = error
 
 # define objects
-panLoop = new ServoLoop(300, 500)
-tiltLoop = new ServoLoop(500, 700)
+panLoop = ServoLoop(300, 500)
+tiltLoop = ServoLoop(500, 700)
 
 
 def setup():
 	# Serial.begin(9600)
 	pixy.pixy_init()
-	rb3.rr.set_motors(0, 0, 0, 0)
-	blocks = BlockArray(BLOCK_BUFFER_SIZE)
+	rr.set_motors(0, 0, 0, 0)
+	blocks = pixy.BlockArray(BLOCK_BUFFER_SIZE)
 	signal.signal(signal.SIGINT, handle_SIGINT)
 
 
@@ -125,6 +127,7 @@ def loop():
 		# TODO, should I set to pause if no new blocks
 		pass
 	count = pixy.pixy_get_blocks(BLOCK_BUFFER_SIZE, blocks)
+	print count
 	if count > 0:
 		# if the largest block is the object to pursue, then prioritize this behavior
 		if (blocks[0].signature == 1):
@@ -139,7 +142,7 @@ def loop():
 				diffGain = 1 - driveGain * float(distError) / targetSize
 
 			# the target is too close and we must back off
-			else if (blocks[0].width > targetSize):
+			elif (blocks[0].width > targetSize):
 				# retreat
 				throttle = -100
 				distError = blocks[0].width - targetSize
@@ -147,7 +150,7 @@ def loop():
 				diffGain = 1 - driveGain * float(distError) / targetSize
 
 		# this is line following algorithm
-		else if (blocks[0].signature == 2):
+		elif (blocks[0].signature == 2):
 			panError = PIXY_X_CENTER-blocks[0].x
 			tiltError = blocks[0].y-PIXY_Y_CENTER
 			# charge forward
@@ -160,8 +163,8 @@ def loop():
 			throttle = 0
 			diffGain = 1
 
-	panLoop.update(panError)
-	tiltLoop.update(tiltError)
+		panLoop.update(panError)
+		tiltLoop.update(tiltError)
 	set_position_result = pixy.pixy_rcs_set_position(PIXY_RCS_PAN_CHANNEL, panLoop.m_pos)
 	set_position_result = pixy.pixy_rcs_set_position(PIXY_RCS_TILT_CHANNEL, tiltLoop.m_pos)	
 
@@ -221,15 +224,19 @@ def drive():
 		RDrive = 0
 
 	# Actually Set the motors
-	rrb3.rr.set_motors(LDrive, LDirection, RDrive, RDirection)
+	rr.set_motors(LDrive, LDirection, RDrive, RDirection)
 
 
 if __name__ == '__main__':
+	print "Before setup"
 	setup()
+	print "After setup"
 	while(True):
+		print "in loop"
 		ok = loop()
 		if not ok:
 			break
+	print 'Closing'
 	pixy.pixy_close()
 
 
