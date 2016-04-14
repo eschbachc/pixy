@@ -3,6 +3,7 @@ import sys
 import signal
 import pixy
 import ctypes
+import time
 import rrb3
 
 
@@ -25,7 +26,7 @@ PAN_DERIVATIVE_GAIN = 300
 TILT_PROPORTIONAL_GAIN = 500
 TILT_DERIVATIVE_GAIN = 400
 
-BLOCK_BUFFER_SIZE = 100
+BLOCK_BUFFER_SIZE = 10
 
 DRIVE_CONVERSION_FACTOR = 0.01
 MAX_MOTOR_SPEED = 1.0
@@ -97,15 +98,15 @@ class ServoLoop (object):
 		self.m_pgain = pgain
 		self.m_dgain = dgain
 
-	def update(error):
-		if (m_prevError != 0x80000000):
-			vel = (error * m_pgain + (error - m_prevError) * m_dgain) >> 10
-			m_pos += vel
-			if (m_pos > PIXY_RCS_MAX_POS):
-				m_pos = PIXY_RCS_MAX_POS
-			elif (m_pos < PIXY_RCS_MIN_POS):
-				m_pos = PIXY_RCS_MIN_POS
-		m_prevError = error
+	def update(self, error):
+		if (self.m_prevError != 0x80000000):
+			vel = (error * self.m_pgain + (error - self.m_prevError) * self.m_dgain) >> 10
+			self.m_pos += vel
+			if (self.m_pos > PIXY_RCS_MAX_POS):
+				self.m_pos = PIXY_RCS_MAX_POS
+			elif (self.m_pos < PIXY_RCS_MIN_POS):
+				self.m_pos = PIXY_RCS_MIN_POS
+		self.m_prevError = error
 
 # define objects
 panLoop = ServoLoop(300, 500)
@@ -113,26 +114,45 @@ tiltLoop = ServoLoop(500, 700)
 
 
 def setup():
+        global blocks
 	# Serial.begin(9600)
-	pixy.pixy_init()
+	pixy_init_status = pixy.pixy_init()
+	if pixy_init_status != 0:
+                print 'Error: pixy_init() [%d] ' % pixy_init_status
+                pixy_error(pixy_init_status)
+                return
+        else:
+                print "Pixy setup OK"
 	rr.set_motors(0, 0, 0, 0)
 	blocks = pixy.BlockArray(BLOCK_BUFFER_SIZE)
 	signal.signal(signal.SIGINT, handle_SIGINT)
+	rr.set_led1(1)
+	time.sleep(0.1)
+	rr.set_led1(0)
+	rr.set_led2(1)
+	time.sleep(0.1)
+	rr.set_led2(0)
+
 
 
 def loop():
+        global blocks, throttle, diffGain, bias
 	# TODO python equivilant?
 	# currentTime = millis()
 	while not pixy.pixy_blocks_are_new() and run_flag:
 		# TODO, should I set to pause if no new blocks
 		pass
 	count = pixy.pixy_get_blocks(BLOCK_BUFFER_SIZE, blocks)
-	print count
+	if count < 0:
+              print 'Error: pixy_get_blocks() [%d] ' % count
+              pixy.pixy_error(count)
+              sys.exit(1)
 	if count > 0:
 		# if the largest block is the object to pursue, then prioritize this behavior
 		if (blocks[0].signature == 1):
 			panError = PIXY_X_CENTER - blocks[0].x
 			tiltError = blocks[0].y - PIXY_Y_CENTER
+			print blocks[0].width, targetSize
 			# the target is far and we must advance
 			if (blocks[0].width < targetSize):
 				# charge forward
@@ -143,6 +163,7 @@ def loop():
 
 			# the target is too close and we must back off
 			elif (blocks[0].width > targetSize):
+                                print "block too big"
 				# retreat
 				throttle = -100
 				distError = blocks[0].width - targetSize
@@ -191,6 +212,8 @@ def loop():
 	return run_flag
 
 def drive():
+        global throttle, diffGain, bias
+        print "Throttle {} diffGain {} bias {}".format(throttle, diffGain, bias)
 	# synDrive is the drive level for going forward or backward (for both wheels)
 	synDrive= 0.5 * throttle * (1 - diffGain)
 	# Drive range is 0 - 1 so convert from 0 - 100 value
@@ -198,7 +221,8 @@ def drive():
 	RDrive = (synDrive - bias * diffGain * abs(throttle)) * DRIVE_CONVERSION_FACTOR
 	LDirection = MOTOR_FORWARD
 	RDirection = MOTOR_FORWARD
-
+        print LDrive
+        print RDrive
 	# Make sure that it is outside dead band and less than the max
 	if (LDrive > deadband):
 		LDirection = MOTOR_FORWARD
@@ -228,15 +252,11 @@ def drive():
 
 
 if __name__ == '__main__':
-	print "Before setup"
 	setup()
-	print "After setup"
 	while(True):
-		print "in loop"
 		ok = loop()
 		if not ok:
 			break
-	print 'Closing'
 	pixy.pixy_close()
 
 

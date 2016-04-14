@@ -15,7 +15,6 @@ void pixy_close();
 void pixy_error(int error_code);
 int  pixy_blocks_are_new();
 int  pixy_get_blocks(uint16_t max_blocks, BlockArray *blocks);
-int  pixy_get_blocks(uint16_t max_blocks, struct Block * blocks);
 int  pixy_rcs_set_position(uint8_t channel, uint16_t position);
 int  pixy_command (const char *name,...);
 int  pixy_led_set_RGB (uint8_t red, uint8_t green, uint8_t blue);
