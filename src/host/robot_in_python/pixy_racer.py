@@ -140,7 +140,6 @@ def loop():
 	# TODO python equivilant?
 	# currentTime = millis()
 	while not pixy.pixy_blocks_are_new() and run_flag:
-		# TODO, should I set to pause if no new blocks
 		pass
 	count = pixy.pixy_get_blocks(BLOCK_BUFFER_SIZE, blocks)
 	if count < 0:
@@ -152,7 +151,6 @@ def loop():
 		if (blocks[0].signature == 1):
 			panError = PIXY_X_CENTER - blocks[0].x
 			tiltError = blocks[0].y - PIXY_Y_CENTER
-			print blocks[0].width, targetSize
 			# the target is far and we must advance
 			if (blocks[0].width < targetSize):
 				# charge forward
@@ -163,7 +161,6 @@ def loop():
 
 			# the target is too close and we must back off
 			elif (blocks[0].width > targetSize):
-                                print "block too big"
 				# retreat
 				throttle = -100
 				distError = blocks[0].width - targetSize
@@ -213,7 +210,6 @@ def loop():
 
 def drive():
         global throttle, diffGain, bias
-        print "Throttle {} diffGain {} bias {}".format(throttle, diffGain, bias)
 	# synDrive is the drive level for going forward or backward (for both wheels)
 	synDrive= 0.5 * throttle * (1 - diffGain)
 	# Drive range is 0 - 1 so convert from 0 - 100 value

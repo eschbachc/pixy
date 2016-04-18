@@ -115,7 +115,7 @@ def main():
   tilt_gimbal = Gimbal(PIXY_RCS_CENTER_POS, TILT_PROPORTIONAL_GAIN, TILT_DERIVATIVE_GAIN)
 
   # Initialize block #
-  block       = Block()
+  blocks = BlockArray(100)
   frame_index = 0
 
   signal.signal(signal.SIGINT, handle_SIGINT)
@@ -128,7 +128,8 @@ def main():
       pass
 
     # Grab a block #
-    count = pixy_get_blocks(BLOCK_BUFFER_SIZE, block)
+    count = pixy_get_blocks(BLOCK_BUFFER_SIZE, blocks)
+    block = blocks[0]
 
     # Was there an error? #
     if count < 0:
