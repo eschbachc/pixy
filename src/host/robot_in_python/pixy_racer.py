@@ -4,6 +4,7 @@ import signal
 import pixy
 import ctypes
 import time
+from datetime import datetime
 import rrb3
 
 
@@ -37,12 +38,12 @@ run_flag = 1
 
 
 # TODO implement timeout?
-# # 20ms time interval for 50Hz
-# dt = 20
-# # check timeout
-# timeout = dt*3
-# currentTime = 0
-# lastTime = 0
+# 20ms time interval for 50Hz
+dt = 20
+# check timeout
+timeout = dt*3
+currentTime = datetime.now()
+lastTime = datetime.now()
 
 
 # 5% drive is deadband
@@ -136,9 +137,9 @@ def setup():
 
 
 def loop():
-        global blocks, throttle, diffGain, bias
+        global blocks, throttle, diffGain, bias, currentTime, lastTime
 	# TODO python equivilant?
-	# currentTime = millis()
+	currentTime = datetime.now()
 	while not pixy.pixy_blocks_are_new() and run_flag:
 		pass
 	count = pixy.pixy_get_blocks(BLOCK_BUFFER_SIZE, blocks)
@@ -147,6 +148,7 @@ def loop():
               pixy.pixy_error(count)
               sys.exit(1)
 	if count > 0:
+                lastTime = currentTime
 		# if the largest block is the object to pursue, then prioritize this behavior
 		if (blocks[0].signature == 1):
 			panError = PIXY_X_CENTER - blocks[0].x
@@ -183,14 +185,18 @@ def loop():
 
 		panLoop.update(panError)
 		tiltLoop.update(tiltError)
+
+	
 	set_position_result = pixy.pixy_rcs_set_position(PIXY_RCS_PAN_CHANNEL, panLoop.m_pos)
 	set_position_result = pixy.pixy_rcs_set_position(PIXY_RCS_TILT_CHANNEL, tiltLoop.m_pos)	
 
     # TODO implement this?
-	# # if Pixy sees nothing recognizable, don't move.
-	# if (currentTime-lastTime >= timeout) : 
-	# 	throttle = 0
-	# 	diffGain = 1
+	# if Pixy sees nothing recognizable, don't move.
+	time_difference = currentTime - lastTime
+	if (time_difference.total_seconds() >= timeout) :
+                print time_difference.total_seconds(), timeout
+		throttle = 0
+		diffGain = 1
 
 
 	# this is turning to left
@@ -217,8 +223,6 @@ def drive():
 	RDrive = (synDrive - bias * diffGain * abs(throttle)) * DRIVE_CONVERSION_FACTOR
 	LDirection = MOTOR_FORWARD
 	RDirection = MOTOR_FORWARD
-        print LDrive
-        print RDrive
 	# Make sure that it is outside dead band and less than the max
 	if (LDrive > deadband):
 		LDirection = MOTOR_FORWARD
