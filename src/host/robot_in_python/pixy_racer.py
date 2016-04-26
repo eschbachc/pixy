@@ -229,8 +229,8 @@ def drive():
 		RDrive = 0
 
 	# Actually Set the motors
-	print (LDrive, RDrive)
-	#motors.setSpeeds(LDrive, RDrive
+	#print (LDrive, RDrive)
+	motors.setSpeeds(LDrive, RDrive)
 
 if __name__ == '__main__':
 	setup()
