@@ -5,7 +5,7 @@ import pixy
 import ctypes
 import time
 from datetime import datetime
-from pololu_drv8835_rpi import motors, MAX_SPEED
+import rrb3
 
 
 PIXY_MIN_X = 0
@@ -29,10 +29,11 @@ TILT_DERIVATIVE_GAIN = 400
 
 BLOCK_BUFFER_SIZE = 10
 
-POLOLU_DRIVE_CONVERSION_FACTOR = 4.8
-MAX_MOTOR_SPEED = 480
-MIN_MOTOR_SPEED = -480
-
+DRIVE_CONVERSION_FACTOR = 0.01
+MAX_MOTOR_SPEED = 1.0
+MIN_MOTOR_SPEED = 0
+MOTOR_FORWARD = 0
+MOTOR_REVERSE = 1
 run_flag = 1
 
 
@@ -46,7 +47,11 @@ lastTime = datetime.now()
 
 
 # 5% drive is deadband
-deadband = 0.05 * MAX_MOTOR_SPEED
+deadband = 0.05 
+# initialize the left wheel state
+LDrive = 0
+# initialize the right wheel state
+RDrive = 0
 # synchronous drive level
 synDrive = 0
 # this is the total drive level [-100~100] abs(throttle)<30 doesn't do much
@@ -64,6 +69,7 @@ h_dgain = 0
 # distance tracking target size: 16cm for orange cone width
 targetSize = 20
 targetSize2 = 10
+rr = rrb3.RRB3(9,6)
 
 blocks = None
 
@@ -111,6 +117,7 @@ tiltLoop = ServoLoop(500, 700)
 
 def setup():
         global blocks
+	# Serial.begin(9600)
 	pixy_init_status = pixy.pixy_init()
 	if pixy_init_status != 0:
                 print 'Error: pixy_init() [%d] ' % pixy_init_status
@@ -118,8 +125,15 @@ def setup():
                 return
         else:
                 print "Pixy setup OK"
+	rr.set_motors(0, 0, 0, 0)
 	blocks = pixy.BlockArray(BLOCK_BUFFER_SIZE)
 	signal.signal(signal.SIGINT, handle_SIGINT)
+	rr.set_led1(1)
+	time.sleep(0.1)
+	rr.set_led1(0)
+	rr.set_led2(1)
+	time.sleep(0.1)
+	rr.set_led2(0)
 
 
 
@@ -198,39 +212,45 @@ def loop():
 		turnError = PIXY_RCS_CENTER_POS - panLoop.m_pos 
 		# <0.5 is turning left 
 		bias = float(turnError) / float(PIXY_RCS_CENTER_POS) * h_pgain
-	#drive_rr()
-        drive()
+	drive()
 	return run_flag
-
 
 def drive():
         global throttle, diffGain, bias
 	# synDrive is the drive level for going forward or backward (for both wheels)
 	synDrive= 0.5 * throttle * (1 - diffGain)
-	# Drive range is -480 - 480 so convert from -100 - 100 value
-	LDrive = (synDrive + bias * diffGain * abs(throttle)) * POLOLU_DRIVE_CONVERSION_FACTOR
-	RDrive = (synDrive - bias * diffGain * abs(throttle)) * POLOLU_DRIVE_CONVERSION_FACTOR
+	# Drive range is 0 - 1 so convert from 0 - 100 value
+	LDrive = (synDrive + bias * diffGain * abs(throttle)) * DRIVE_CONVERSION_FACTOR
+	RDrive = (synDrive - bias * diffGain * abs(throttle)) * DRIVE_CONVERSION_FACTOR
+	LDirection = MOTOR_FORWARD
+	RDirection = MOTOR_FORWARD
 	# Make sure that it is outside dead band and less than the max
 	if (LDrive > deadband):
+		LDirection = MOTOR_FORWARD
 		if (LDrive > MAX_MOTOR_SPEED):
 			LDrive = MAX_MOTOR_SPEED
 	elif (LDrive < -deadband):
-		if (LDrive < -MAX_MOTOR_SPEED):
-			LDrive = -MAX_MOTOR_SPEED
+		LDirection = MOTOR_REVERSE
+		LDrive = -LDrive
+		if (LDrive > MAX_MOTOR_SPEED):
+			LDrive = MAX_MOTOR_SPEED
 	else:
 		LDrive = 0
 	if (RDrive > deadband):
+		RDirection = MOTOR_FORWARD
 		if (RDrive > MAX_MOTOR_SPEED):
 			RDrive = MAX_MOTOR_SPEED
 	elif (RDrive < -deadband):
+		RDirection = MOTOR_REVERSE
+		RDrive = -RDrive
 		if (RDrive > MAX_MOTOR_SPEED):
-			RDrive = -MAX_MOTOR_SPEED
+			RDrive = MAX_MOTOR_SPEED
 	else:
 		RDrive = 0
 
 	# Actually Set the motors
-	print (LDrive, RDrive)
-	#motors.setSpeeds(LDrive, RDrive
+	rr.set_motors(LDrive, LDirection, RDrive, RDirection)
+
 
 if __name__ == '__main__':
 	setup()

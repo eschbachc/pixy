@@ -53,6 +53,7 @@ cp demo.py $PIXY_ROOT/build/$TARGET_BUILD_FOLDER
 cp get_blocks.py $PIXY_ROOT/build/$TARGET_BUILD_FOLDER
 cp pan_tilt.py $PIXY_ROOT/build/$TARGET_BUILD_FOLDER
 cp pixy_racer.py $PIXY_ROOT/build/$TARGET_BUILD_FOLDER
+cp rr_pixy_racer.py $PIXY_ROOT/build/$TARGET_BUILD_FOLDER
 cp pixy.i $PIXY_ROOT/build/$TARGET_BUILD_FOLDER
 cp setup.py $PIXY_ROOT/build/$TARGET_BUILD_FOLDER
 
