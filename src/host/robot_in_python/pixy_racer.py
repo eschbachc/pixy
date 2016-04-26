@@ -56,7 +56,8 @@ RDrive = 0
 synDrive = 0
 # this is the total drive level [-100~100] abs(throttle)<30 doesn't do much
 throttle = 0
-driveGain = 1
+# this gain currently modulates the forward drive enhancement
+driveGain = 3
 # this ratio determines the differential drive [0~1]
 bias = 0.5
 # this is the drive level allocated for turning [0~1] dynamically modulate
@@ -167,7 +168,7 @@ def loop():
 				throttle = -100
 				distError = blocks[0].width - targetSize
 				# this is in float format
-				diffGain = 1 - driveGain * float(distError) / targetSize
+				diffGain = 1 - float(distError) / targetSize
 
 		# this is line following algorithm
 		elif (blocks[0].signature == 2):
