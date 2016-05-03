@@ -5,7 +5,7 @@ import ctypes
 import math
 from datetime import datetime
 import pixy
-#from pololu_drv8835_rpi import motors
+from pololu_drv8835_rpi import motors
 
 ##### defining PixyCam sensory variables
 PIXY_MIN_X = 0
@@ -90,7 +90,6 @@ blocks = None
 
 def handle_SIGINT(sig, frame):
     global run_flag
-    print "Handling SIGINT"
     run_flag = False
 
 class Blocks(ctypes.Structure):
@@ -186,7 +185,6 @@ def loop():
     # if Pixy sees nothing recognizable, don't move.
     time_difference = currentTime - lastTime
     if time_difference.total_seconds() >= timeout:
-        print time_difference.total_seconds(), timeout
         throttle = 0.0
         diffDrive = 1
 
@@ -235,8 +233,7 @@ def drive():
         RDrive = 0
 
     # Actually Set the motors
-    print (bias, diffDrive, advance, synDrive, leftDiff, rightDiff)
-    #motors.setSpeeds(int(LDrive), int(RDrive))
+    motors.setSpeeds(int(LDrive), int(RDrive))
 
 if __name__ == '__main__':
     setup()
