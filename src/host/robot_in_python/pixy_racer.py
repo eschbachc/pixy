@@ -89,10 +89,19 @@ refDist = 400
 blocks = None
 
 def handle_SIGINT(sig, frame):
+    """
+    Handle CTRL-C quit by setting run flag to false
+    This will break out of main loop and let you close
+    pixy gracefully
+    """
     global run_flag
     run_flag = False
 
 class Blocks(ctypes.Structure):
+    """
+    Block structure for use with getting blocks from
+    pixy.get_blocks()
+    """
     _fields_ = [
         ("type", ctypes.c_uint),
         ("signature", ctypes.c_uint),
@@ -104,7 +113,9 @@ class Blocks(ctypes.Structure):
     ]
 
 class ServoLoop(object):
-
+    """
+    Loop to set pixy pan position
+    """
     def __init__(self, pgain, dgain):
         self.m_pos = PIXY_RCS_CENTER_POS
         self.m_prevError = 0x80000000L
@@ -123,10 +134,12 @@ class ServoLoop(object):
 
 # define objects
 panLoop = ServoLoop(300, 500)
-tiltLoop = ServoLoop(500, 700)
 
 
 def setup():
+    """
+    One time setup. Inialize pixy and set sigint handler
+    """
     global blocks
     pixy_init_status = pixy.pixy_init()
     if pixy_init_status != 0:
@@ -140,21 +153,29 @@ def setup():
 
 
 def loop():
+    """
+    Main loop, Gets blocks from pixy, analyzes target location,
+    chooses action for robot and sends instruction to motors
+    """
     global blocks, throttle, diffDrive, diffGain, bias, advance, currentTime, lastTime, objectDist, distError, panError_prev, distError_prev
     currentTime = datetime.now()
+    # If no new blocks, don't do anything
     while not pixy.pixy_blocks_are_new() and run_flag:
         pass
     count = pixy.pixy_get_blocks(BLOCK_BUFFER_SIZE, blocks)
+    # If negative blocks, something went wrong
     if count < 0:
         print 'Error: pixy_get_blocks() [%d] ' % count
         pixy.pixy_error(count)
         sys.exit(1)
+    # if more than one block
+    # Check which the largest block's signature and either do target chasing or
+    # line following
     if count > 0:
         lastTime = currentTime
         # if the largest block is the object to pursue, then prioritize this behavior
         if blocks[0].signature == 1:
             panError = PIXY_X_CENTER - blocks[0].x
-            tiltError = blocks[0].y - PIXY_Y_CENTER
             objectDist = refSize1 / (2 * math.tan(math.radians(blocks[0].width * pix2ang_factor)))
             throttle = 0.5
             # amount of steering depends on how much deviation is there
@@ -165,7 +186,6 @@ def loop():
         # if Pixy sees a guideline, perform line following algorithm
         elif blocks[0].signature == 2:
             panError = PIXY_X_CENTER-blocks[0].x
-            tiltError = blocks[0].y-PIXY_Y_CENTER
             throttle = 0.2
             # amount of steering depends on how much deviation is there
             diffDrive = diffGain * abs(float(panError)) / PIXY_X_CENTER
@@ -174,13 +194,11 @@ def loop():
         # if none of the blocks make sense, just pause
         else:
             panError = 0
-            tiltError = 0
             throttle = 0.0
             diffDrive = 1
         panLoop.update(panError)
-        tiltLoop.update(tiltError)
+    # Update pixy's pan position
     pixy.pixy_rcs_set_position(PIXY_RCS_PAN_CHANNEL, panLoop.m_pos)
-    pixy.pixy_rcs_set_position(PIXY_RCS_TILT_CHANNEL, tiltLoop.m_pos)
 
     # if Pixy sees nothing recognizable, don't move.
     time_difference = currentTime - lastTime
@@ -242,7 +260,8 @@ if __name__ == '__main__':
         if not ok:
             break
     pixy.pixy_close()
-    print "Pixy Shutdown Completed"
+    motors.setSpeeds(0, 0)
+    print "Robot Shutdown Completed"
 
 
 
