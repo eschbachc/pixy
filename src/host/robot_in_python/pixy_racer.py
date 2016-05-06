@@ -34,8 +34,6 @@ MIN_MOTOR_SPEED = -480
 
 run_flag = 1
 
-
-# TODO implement timeout?
 # 20ms time interval for 50Hz
 dt = 20
 # check timeout dt*3
@@ -56,7 +54,7 @@ diffDrive = 0
 # this is the drive level allocated for steering [0~1] dynamically modulate
 diffDrive = 0
 # this is the gain for scaling diffDrive
-diffGain = 3
+diffGain = 1
 # this ratio determines the steering [-1~1]
 bias = 0
 # this ratio determines the drive direction and magnitude [-1~1]
@@ -69,10 +67,10 @@ h_pgain = 0.5
 h_dgain = 0
 
 #### defining state estimation variables
-pixyViewV = 47
-pixyViewH = 75
-pixyImgV = 400
-pixyImgH = 640
+# pixyViewV = 47
+# pixyViewH = 75
+# pixyImgV = 400
+# pixyImgH = 640
 # pixel to visual angle conversion factor (only rough approximation) (pixyViewV/pixyImgV + pixyViewH/pixyImgH) / 2
 pix2ang_factor = 0.117
 # reference object one is the pink earplug (~12mm wide)
@@ -132,7 +130,7 @@ class ServoLoop(object):
                 self.m_pos = PIXY_RCS_MIN_POS
         self.m_prevError = error
 
-# define objects
+# define pan loop
 panLoop = ServoLoop(300, 500)
 
 
@@ -157,7 +155,7 @@ def loop():
     Main loop, Gets blocks from pixy, analyzes target location,
     chooses action for robot and sends instruction to motors
     """
-    global blocks, throttle, diffDrive, diffGain, bias, advance, currentTime, lastTime, objectDist, distError, panError_prev, distError_prev
+    global blocks, throttle, diffDrive, diffGain, bias, advance, turnError, currentTime, lastTime, objectDist, distError, panError_prev, distError_prev
     currentTime = datetime.now()
     # If no new blocks, don't do anything
     while not pixy.pixy_blocks_are_new() and run_flag:
@@ -186,16 +184,17 @@ def loop():
         # if Pixy sees a guideline, perform line following algorithm
         elif blocks[0].signature == 2:
             panError = PIXY_X_CENTER-blocks[0].x
-            throttle = 0.2
+            throttle = 1.0
+            diffDrive = 0.6
             # amount of steering depends on how much deviation is there
-            diffDrive = diffGain * abs(float(panError)) / PIXY_X_CENTER
+            # diffDrive = diffGain * abs(float(turnError)) / PIXY_X_CENTER
             # use full available throttle for charging forward
             advance = 1            
         # if none of the blocks make sense, just pause
-        else:
-            panError = 0
-            throttle = 0.0
-            diffDrive = 1
+        # else:
+        #    panError = 0
+        #    throttle = 0.0
+        #    diffDrive = 1
         panLoop.update(panError)
     # Update pixy's pan position
     pixy.pixy_rcs_set_position(PIXY_RCS_PAN_CHANNEL, panLoop.m_pos)
