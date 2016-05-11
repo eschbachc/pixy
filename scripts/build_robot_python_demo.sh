@@ -12,15 +12,8 @@ echo "-----------------------------------------"
 echo "Installing motor libraries"
 echo "-----------------------------------------"
 sudo pip install rrb3
-cd /tmp
-git clone git://git.drogon.net/wiringPi
-cd wiringPi
-./build
-cd /tmp
-git clone https://github.com/Gadgetoid/WiringPi2-Python.git
-cd WiringPi2-Python
 sudo apt-get install python-dev python-setuptools
-sudo python setup.py install
+sudo pip install wiringpi
 cd /tmp
 git clone https://github.com/pololu/drv8835-motor-driver-rpi.git
 cd drv8835-motor-driver-rpi
