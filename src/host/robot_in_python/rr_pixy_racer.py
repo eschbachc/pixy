@@ -1,13 +1,13 @@
 
 import sys
 import signal
-import pixy
 import ctypes
-import time
+import math
 from datetime import datetime
+import pixy
 import rrb3
 
-
+##### defining PixyCam sensory variables
 PIXY_MIN_X = 0
 PIXY_MAX_X = 319
 PIXY_MIN_Y = 0
@@ -18,7 +18,9 @@ PIXY_Y_CENTER = ((PIXY_MAX_Y-PIXY_MIN_Y) / 2)
 PIXY_RCS_MIN_POS = 0
 PIXY_RCS_MAX_POS = 1000
 PIXY_RCS_CENTER_POS = ((PIXY_RCS_MAX_POS-PIXY_RCS_MIN_POS) / 2)
+BLOCK_BUFFER_SIZE = 10
 
+##### defining PixyCam motor variables
 PIXY_RCS_PAN_CHANNEL = 0
 PIXY_RCS_TILT_CHANNEL = 1
 
@@ -27,270 +29,250 @@ PAN_DERIVATIVE_GAIN = 300
 TILT_PROPORTIONAL_GAIN = 500
 TILT_DERIVATIVE_GAIN = 400
 
-BLOCK_BUFFER_SIZE = 10
-
-DRIVE_CONVERSION_FACTOR = 0.01
 MAX_MOTOR_SPEED = 1.0
-MIN_MOTOR_SPEED = 0
-MOTOR_FORWARD = 0
-MOTOR_REVERSE = 1
+
 run_flag = 1
 
-
-# TODO implement timeout?
 # 20ms time interval for 50Hz
 dt = 20
-# check timeout
-timeout = dt*3
+# check timeout dt*3
+timeout = 0.5
 currentTime = datetime.now()
 lastTime = datetime.now()
 
 
+#### defining motor function variables
 # 5% drive is deadband
-deadband = 0.05 
-# initialize the left wheel state
-LDrive = 0
-# initialize the right wheel state
-RDrive = 0
-# synchronous drive level
-synDrive = 0
-# this is the total drive level [-100~100] abs(throttle)<30 doesn't do much
+deadband = 0.05 * MAX_MOTOR_SPEED
+# totalDrive is the total power available
+totalDrive = MAX_MOTOR_SPEED
+# throttle is how much of the totalDrive to use [0~1]
 throttle = 0
+# this is the drive level allocated for steering [0~1] dynamically modulate
+diffDrive = 0
+# this is the gain for scaling diffDrive
+diffGain = 1
+# this ratio determines the steering [-1~1]
+bias = 0
+# this ratio determines the drive direction and magnitude [-1~1]
+advance = 0
 # this gain currently modulates the forward drive enhancement
-driveGain = 3
-# this ratio determines the differential drive [0~1]
-bias = 0.5
-# this is the drive level allocated for turning [0~1] dynamically modulate
-diffGain = 0
-#  body turning gain
+driveGain = 1
+# body turning p-gain
 h_pgain = 0.5
-# body turning gain
+# body turning d-gain
 h_dgain = 0
-# distance tracking target size: 16cm for orange cone width
-targetSize = 20
-targetSize2 = 10
+
+#### defining state estimation variables
+# pixyViewV = 47
+# pixyViewH = 75
+# pixyImgV = 400
+# pixyImgH = 640
+# pixel to visual angle conversion factor (only rough approximation) (pixyViewV/pixyImgV + pixyViewH/pixyImgH) / 2
+pix2ang_factor = 0.117
+# reference object one is the pink earplug (~12mm wide)
+refSize1 = 12
+# reference object two is side post (~50mm tall)
+refSize2 = 50
+# this is the distance estimation of an object
+objectDist = 0
+# this is some desired distance to keep (mm)
+targetDist = 100
+# reference distance; some fix distance to compare the object distance with
+refDist = 400
 rr = rrb3.RRB3(9,6)
 
 blocks = None
 
+def handle_SIGINT(sig, frame):
+    """
+    Handle CTRL-C quit by setting run flag to false
+    This will break out of main loop and let you close
+    pixy gracefully
+    """
+    global run_flag
+    run_flag = False
 
-def handle_SIGINT(signal, frame):
-	global run_flag
-	run_flag = False
+class Blocks(ctypes.Structure):
+    """
+    Block structure for use with getting blocks from
+    pixy.get_blocks()
+    """
+    _fields_ = [
+        ("type", ctypes.c_uint),
+        ("signature", ctypes.c_uint),
+        ("x", ctypes.c_uint),
+        ("y", ctypes.c_uint),
+        ("width", ctypes.c_uint),
+        ("height", ctypes.c_uint),
+        ("angle", ctypes.c_uint)
+    ]
 
+class ServoLoop(object):
+    """
+    Loop to set pixy pan position
+    """
+    def __init__(self, pgain, dgain):
+        self.m_pos = PIXY_RCS_CENTER_POS
+        self.m_prevError = 0x80000000L
+        self.m_pgain = pgain
+        self.m_dgain = dgain
 
-class Blocks (ctypes.Structure):
-	_fields_ = [
-		("type", ctypes.c_uint),
-		("signature", ctypes.c_uint),
-		("x", ctypes.c_uint),
-		("y", ctypes.c_uint),
-		("width", ctypes.c_uint),
-		("height", ctypes.c_uint),
-		("angle", ctypes.c_uint)
-	]
+    def update(self, error):
+        if self.m_prevError != 0x80000000:
+            vel = (error * self.m_pgain + (error - self.m_prevError) * self.m_dgain) >> 10
+            self.m_pos += vel
+            if self.m_pos > PIXY_RCS_MAX_POS:
+                self.m_pos = PIXY_RCS_MAX_POS
+            elif self.m_pos < PIXY_RCS_MIN_POS:
+                self.m_pos = PIXY_RCS_MIN_POS
+        self.m_prevError = error
 
-
-
-class ServoLoop (object):
-
-	def __init__(self, pgain, dgain):
-		self.m_pos = PIXY_RCS_CENTER_POS
-		self.m_prevError = 0x80000000L
-		self.m_pgain = pgain
-		self.m_dgain = dgain
-
-	def update(self, error):
-		if (self.m_prevError != 0x80000000):
-			vel = (error * self.m_pgain + (error - self.m_prevError) * self.m_dgain) >> 10
-			self.m_pos += vel
-			if (self.m_pos > PIXY_RCS_MAX_POS):
-				self.m_pos = PIXY_RCS_MAX_POS
-			elif (self.m_pos < PIXY_RCS_MIN_POS):
-				self.m_pos = PIXY_RCS_MIN_POS
-		self.m_prevError = error
-
-# define objects
+# define pan loop
 panLoop = ServoLoop(300, 500)
-tiltLoop = ServoLoop(500, 700)
 
 
 def setup():
-        global blocks
-	# Serial.begin(9600)
-	pixy_init_status = pixy.pixy_init()
-	if pixy_init_status != 0:
-                print 'Error: pixy_init() [%d] ' % pixy_init_status
-                pixy_error(pixy_init_status)
-                return
-        else:
-                print "Pixy setup OK"
-	rr.set_motors(0, 0, 0, 0)
-	blocks = pixy.BlockArray(BLOCK_BUFFER_SIZE)
-	signal.signal(signal.SIGINT, handle_SIGINT)
-	rr.set_led1(1)
-	time.sleep(0.1)
-	rr.set_led1(0)
-	rr.set_led2(1)
-	time.sleep(0.1)
-	rr.set_led2(0)
-
+    """
+    One time setup. Inialize pixy and set sigint handler
+    """
+    global blocks
+    pixy_init_status = pixy.pixy_init()
+    if pixy_init_status != 0:
+        print 'Error: pixy_init() [%d] ' % pixy_init_status
+        pixy.pixy_error(pixy_init_status)
+        return
+    else:
+        print "Pixy setup OK"
+    rr.set_motors(0, 0, 0, 0)
+    blocks = pixy.BlockArray(BLOCK_BUFFER_SIZE)
+    signal.signal(signal.SIGINT, handle_SIGINT)
 
 
 def loop():
-        global blocks, throttle, diffGain, bias, currentTime, lastTime
-	# TODO python equivilant?
-	currentTime = datetime.now()
-	while not pixy.pixy_blocks_are_new() and run_flag:
-		pass
-	count = pixy.pixy_get_blocks(BLOCK_BUFFER_SIZE, blocks)
-	if count < 0:
-              print 'Error: pixy_get_blocks() [%d] ' % count
-              pixy.pixy_error(count)
-              sys.exit(1)
-	if count > 0:
-                lastTime = currentTime
-		# if the largest block is the object to pursue, then prioritize this behavior
-		if (blocks[0].signature == 1):
-			panError = PIXY_X_CENTER - blocks[0].x
-			tiltError = blocks[0].y - PIXY_Y_CENTER
-			# the target is far and we must advance
-			if (blocks[0].width < targetSize):
-				# charge forward
-				throttle = 100  # charge forward
-				distError = targetSize - blocks[0].width
-				# this is in float format
-				diffGain = 1 - driveGain * float(distError) / targetSize
+    """
+    Main loop, Gets blocks from pixy, analyzes target location,
+    chooses action for robot and sends instruction to motors
+    """
+    global blocks, throttle, diffDrive, diffGain, bias, advance, turnError, currentTime, lastTime, objectDist, distError, panError_prev, distError_prev
+    currentTime = datetime.now()
+    # If no new blocks, don't do anything
+    while not pixy.pixy_blocks_are_new() and run_flag:
+        pass
+    count = pixy.pixy_get_blocks(BLOCK_BUFFER_SIZE, blocks)
+    # If negative blocks, something went wrong
+    if count < 0:
+        print 'Error: pixy_get_blocks() [%d] ' % count
+        pixy.pixy_error(count)
+        sys.exit(1)
+    # if more than one block
+    # Check which the largest block's signature and either do target chasing or
+    # line following
+    if count > 0:
+        lastTime = currentTime
+        # if the largest block is the object to pursue, then prioritize this behavior
+        if blocks[0].signature == 1:
+            panError = PIXY_X_CENTER - blocks[0].x
+            objectDist = refSize1 / (2 * math.tan(math.radians(blocks[0].width * pix2ang_factor)))
+            throttle = 0.5
+            # amount of steering depends on how much deviation is there
+            diffDrive = diffGain * abs(float(panError)) / PIXY_X_CENTER
+            distError = objectDist - targetDist
+            # this is in float format with sign indicating advancing or retreating
+            advance = driveGain * float(distError) / refDist
+        # if Pixy sees a guideline, perform line following algorithm
+        elif blocks[0].signature == 2:
+            panError = PIXY_X_CENTER-blocks[0].x
+            throttle = 1.0
+            diffDrive = 0.6
+            # amount of steering depends on how much deviation is there
+            # diffDrive = diffGain * abs(float(turnError)) / PIXY_X_CENTER
+            # use full available throttle for charging forward
+            advance = 1            
+        # if none of the blocks make sense, just pause
+        # else:
+        #    panError = 0
+        #    throttle = 0.0
+        #    diffDrive = 1
+        panLoop.update(panError)
+    # Update pixy's pan position
+    pixy.pixy_rcs_set_position(PIXY_RCS_PAN_CHANNEL, panLoop.m_pos)
 
-			# the target is too close and we must back off
-			elif (blocks[0].width > targetSize):
-				# retreat
-				throttle = -100
-				distError = blocks[0].width - targetSize
-				# this is in float format
-				diffGain = 1 - float(distError) / targetSize
+    # if Pixy sees nothing recognizable, don't move.
+    time_difference = currentTime - lastTime
+    if time_difference.total_seconds() >= timeout:
+        throttle = 0.0
+        diffDrive = 1
 
-		# this is line following algorithm
-		elif (blocks[0].signature == 2):
-			panError = PIXY_X_CENTER-blocks[0].x
-			tiltError = blocks[0].y-PIXY_Y_CENTER
-			# charge forward
-			throttle = 100
-			diffGain = 0.3
-		# if none of the blocks make sense, just pause
-		else:
-			panError = 0
-			tiltError = 0
-			throttle = 0
-			diffGain = 1
-
-		panLoop.update(panError)
-		tiltLoop.update(tiltError)
-
-	
-	set_position_result = pixy.pixy_rcs_set_position(PIXY_RCS_PAN_CHANNEL, panLoop.m_pos)
-	set_position_result = pixy.pixy_rcs_set_position(PIXY_RCS_TILT_CHANNEL, tiltLoop.m_pos)	
-
-    # TODO implement this?
-	# if Pixy sees nothing recognizable, don't move.
-	time_difference = currentTime - lastTime
-	if (time_difference.total_seconds() >= timeout) :
-                print time_difference.total_seconds(), timeout
-		throttle = 0
-		diffGain = 1
+    # this is turning to left
+    if panLoop.m_pos > PIXY_RCS_CENTER_POS:
+        # should be still int32_t
+        turnError = panLoop.m_pos - PIXY_RCS_CENTER_POS
+        # <0 is turning left; currently only p-control is implemented
+        bias = - float(turnError) / float(PIXY_RCS_CENTER_POS) * h_pgain
+    # this is turning to right
+    elif panLoop.m_pos < PIXY_RCS_CENTER_POS:
+        # should be still int32_t
+        turnError = PIXY_RCS_CENTER_POS - panLoop.m_pos
+        # >0 is turning left; currently only p-control is implemented
+        bias = float(turnError) / float(PIXY_RCS_CENTER_POS) * h_pgain
+    drive_rr()
+    return run_flag
 
 
-	# this is turning to left
-	if (panLoop.m_pos > PIXY_RCS_CENTER_POS) : 
-		# should be still int32_t
-		turnError = panLoop.m_pos - PIXY_RCS_CENTER_POS 
-		# <0.5 is turning left 
-		bias = - float(turnError) / float(PIXY_RCS_CENTER_POS) * h_pgain
-	# this is turning to right
-	elif (panLoop.m_pos < PIXY_RCS_CENTER_POS):
-		# should be still int32_t
-		turnError = PIXY_RCS_CENTER_POS - panLoop.m_pos 
-		# <0.5 is turning left 
-		bias = float(turnError) / float(PIXY_RCS_CENTER_POS) * h_pgain
-	drive()
-	return run_flag
+def drive_rr():
+    global throttle, diffGain, bias
+    # Eliminated total_drive since max motor speed is 1
+    synDrive = advance * (1 - diffDrive) * throttle 
+    leftDiff = bias * diffDrive * throttle 
+    rightDiff = -bias * diffDrive * throttle 
+    # construct the drive levels
 
-def drive():
-        global throttle, diffGain, bias
-	# synDrive is the drive level for going forward or backward (for both wheels)
-	synDrive= 0.5 * throttle * (1 - diffGain)
-	# Drive range is 0 - 1 so convert from 0 - 100 value
-	LDrive = (synDrive + bias * diffGain * abs(throttle)) * DRIVE_CONVERSION_FACTOR
-	RDrive = (synDrive - bias * diffGain * abs(throttle)) * DRIVE_CONVERSION_FACTOR
-	LDirection = MOTOR_FORWARD
-	RDirection = MOTOR_FORWARD
-	# Make sure that it is outside dead band and less than the max
-	if (LDrive > deadband):
-		LDirection = MOTOR_FORWARD
-		if (LDrive > MAX_MOTOR_SPEED):
-			LDrive = MAX_MOTOR_SPEED
-	elif (LDrive < -deadband):
-		LDirection = MOTOR_REVERSE
-		LDrive = -LDrive
-		if (LDrive > MAX_MOTOR_SPEED):
-			LDrive = MAX_MOTOR_SPEED
-	else:
-		LDrive = 0
-	if (RDrive > deadband):
-		RDirection = MOTOR_FORWARD
-		if (RDrive > MAX_MOTOR_SPEED):
-			RDrive = MAX_MOTOR_SPEED
-	elif (RDrive < -deadband):
-		RDirection = MOTOR_REVERSE
-		RDrive = -RDrive
-		if (RDrive > MAX_MOTOR_SPEED):
-			RDrive = MAX_MOTOR_SPEED
-	else:
-		RDrive = 0
+    LDrive = synDrive + leftDiff
+    RDrive = synDrive + rightDiff
+    RR_MAX = 1.0
+    REVERSE = 0
+    FORWARD = 1
+    LDirection = FORWARD
+    RDirection = FORWARD
 
-	# Actually Set the motors
-	rr.set_motors(LDrive, LDirection, RDrive, RDirection)
+    # Make sure that it is outside dead band and less than the max
+    if LDrive > deadband:
+        if LDrive > RR_MAX:
+            LDrive = RR_MAX
+    elif LDrive < -deadband:
+        LDirection = REVERSE
+        if LDrive < -RR_MAX:
+            LDrive = -RR_MAX
+        LDrive = -LDrive
+    else:
+        LDrive = 0
+
+    if RDrive > deadband:
+        if RDrive > RR_MAX:
+            RDrive = RR_MAX
+    elif RDrive < -deadband:
+        RDirection = REVERSE
+        if RDrive < -RR_MAX:
+            RDrive = -RR_MAX
+        RDrive = -RDrive
+    else:
+        RDrive = 0
+
+    # Actually Set the motors
+    rr.set_motors(LDrive, LDirection, RDrive, RDirection)   
+
 
 
 if __name__ == '__main__':
-	setup()
-	while(True):
-		ok = loop()
-		if not ok:
-			break
-	pixy.pixy_close()
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+    setup()
+    while True:
+        ok = loop()
+        if not ok:
+            break
+    pixy.pixy_close()
+    rr.set_motors(0, 0, 0, 0)
+    print "Robot Shutdown Completed"
 
 
 
